@@ -205,6 +205,12 @@ public final class BluetoothPhoneService extends Service {
             CallsManager callsManager = getCallsManager();
             Call call = null;
 
+            if (request == null)
+            {
+                Log.i(TAG, "handleMessage: request is null");
+                return;
+            }
+
             Log.d(TAG, "handleMessage(%d) w/ param %s",
                     msg.what, request == null ? null : request.param);
 
@@ -268,6 +274,12 @@ public final class BluetoothPhoneService extends Service {
                         if (TextUtils.isEmpty(address)) {
                             address = TelephonyManager.from(BluetoothPhoneService.this)
                                     .getLine1Number();
+                            /* if address is still null then while loop in
+                             * sendSynchronousRequest will never be terminated and all
+                             * subsequent requests will keep on waiting */
+                            if (TextUtils.isEmpty(address)) {
+                                address = "";
+                            }
                         }
                     } finally {
                         request.setResult(address);
@@ -500,6 +512,8 @@ public final class BluetoothPhoneService extends Service {
         } else if (chld == CHLD_TYPE_HOLDACTIVE_ACCEPTHELD) {
             if (activeCall != null && activeCall.can(PhoneCapabilities.SWAP_CONFERENCE)) {
                 activeCall.swapConference();
+                Log.i(TAG, "CDMA calls in conference swapped, updating headset");
+                updateHeadsetWithCallState(true /* force */);
                 return true;
             } else if (ringingCall != null) {
                 callsManager.answerCall(ringingCall, 0);
@@ -692,7 +706,7 @@ public final class BluetoothPhoneService extends Service {
 
         int numActiveCalls = activeCall == null ? 0 : 1;
         int numHeldCalls = callsManager.getNumHeldCalls();
-
+        boolean callsSwitched = (numHeldCalls == 2);
         // For conference calls which support swapping the active call within the conference
         // (namely CDMA calls) we need to expose that as a held call in order for the BT device
         // to show "swap" and "merge" functionality.
@@ -724,7 +738,7 @@ public final class BluetoothPhoneService extends Service {
                  !TextUtils.equals(ringingAddress, mRingingAddress) ||
                  ringingAddressType != mRingingAddressType ||
                  (heldCall != mOldHeldCall && !ignoreHeldCallChange) ||
-                 force)) {
+                 force) && !callsSwitched) {
 
             // If the call is transitioning into the alerting state, send DIALING first.
             // Some devices expect to see a DIALING state prior to seeing an ALERTING state
